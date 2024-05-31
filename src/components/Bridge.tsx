@@ -36,11 +36,6 @@ export const Bridge = () => {
     transport: http("https://bsc-dataseed1.ninicoin.io"), // has eth_newFilter
   });
 
-  useEffect(() => {
-
-  }, []);
-
-
   const sendCoins = async (address, chain: "bsc" | "polygon", amount: number) => {
     const clientWallet = createWalletClient({
       chain: chain == "bsc" ? bsc : polygon,
