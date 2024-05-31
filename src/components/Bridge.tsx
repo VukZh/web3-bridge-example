@@ -1,12 +1,13 @@
 import {Button, Flex, Input, NumberInput, Stack, Text} from "@mantine/core";
-import {createPublicClient, http, isAddress} from "viem";
+import {createPublicClient, createWalletClient, http, isAddress, custom} from "viem";
 import {polygon, bsc} from "viem/chains";
 import {bridgeContractAbi} from "../abi/bridgeContractABI.ts";
-import {useEffect, useState} from "react";
+import {useContext, useEffect, useState} from "react";
 import {IconArrowLeftTail, IconArrowRightTail} from "@tabler/icons-react";
 import {notifications} from "@mantine/notifications";
 // @ts-ignore
 import {ErrorType} from "viem/_types/errors/utils";
+import {Context} from "../state/ContextProvider.tsx";
 
 const makeNotification = (msg: string) => {
   notifications.show({
@@ -23,6 +24,8 @@ export const Bridge = () => {
 
   let lastLogIndex: number | null = null;
 
+  const {activeChain, setActiveChain} = useContext(Context);
+
   const polygonPublicClient = createPublicClient({
     chain: polygon,
     transport: http("https://polygon-pokt.nodies.app"), // has eth_newFilter
@@ -33,42 +36,96 @@ export const Bridge = () => {
     transport: http("https://bsc-dataseed1.ninicoin.io"), // has eth_newFilter
   });
 
-  const unwatchPolygonPublicClient = polygonPublicClient.watchContractEvent({
-    address: process.env.POLYGON_TOKEN_ADDRESS as `0x${string}`,
-    abi: bridgeContractAbi,
-    eventName: 'BurnBridge',
-    pollingInterval: 10000,
-    onLogs: logs => {
-      const log0 = logs[0];
-      if (
-        lastLogIndex !== log0?.logIndex
-      ) {
-        lastLogIndex = log0?.logIndex;
-        console.log("logs  ", log0?.args?.addr, log0?.args?.amount)
-      }
-    },
-    fromBlock: 57521163n,
-  })
+  useEffect(() => {
 
-  const unwatchBSCPublicClient = bscPublicClient.watchContractEvent({
-    address: process.env.BSC_TOKEN_ADDRESS as `0x${string}`,
-    abi: bridgeContractAbi,
-    eventName: 'BurnBridge',
-    // args: { from: '0xc961145a54C96E3aE9bAA048c4F4D6b04C13916b' },
-    pollingInterval: 10000,
-    onLogs: (logs) => console.log("logs - ", logs),
-    fromBlock: 39139288n,
-  })
+  }, []);
+
+
+  const sendCoins = async (address, chain: "bsc" | "polygon", amount: number) => {
+    const clientWallet = createWalletClient({
+      chain: chain == "bsc" ? bsc : polygon,
+      transport: custom(window.ethereum!)
+    })
+    try {
+      const [account] = await clientWallet.getAddresses()
+      const res = await clientWallet.writeContract({
+        address: chain === "bsc" ? process.env.BSC_TOKEN_ADDRESS : process.env.POLYGON_TOKEN_ADDRESS,
+        abi: bridgeContractAbi,
+        functionName: 'burnB',
+        account,
+        args: [address, amount * 10 ** decimals],
+      })
+      console.log("res", res)
+
+      const newChain: any = activeChain === 'bsc' ? polygon : bsc;
+      await clientWallet.switchChain({id: newChain.id});
+      setActiveChain(activeChain === 'bsc' ? "polygon" : "bsc")
+      const [account2] = await clientWallet.getAddresses()
+
+      const clientWallet2 = createWalletClient({
+        chain: chain == "bsc" ? polygon : bsc,
+        transport: custom(window.ethereum!)
+      })
+
+      const res2 = await clientWallet2.writeContract({
+        address: chain === "bsc" ? process.env.POLYGON_TOKEN_ADDRESS : process.env.BSC_TOKEN_ADDRESS,
+        abi: bridgeContractAbi,
+        functionName: 'mintB',
+        account: account2,
+        args: [address, amount * 10 ** decimals],
+      })
+      console.log("res2", res2)
+
+    } catch (e: ErrorType) {
+      console.error(e)
+      makeNotification(e.message.toString())
+    }
+  }
 
 
   useEffect(() => {
+
+    const unwatchPolygonPublicClient = polygonPublicClient.watchContractEvent({
+      address: process.env.POLYGON_TOKEN_ADDRESS as `0x${string}`,
+      abi: bridgeContractAbi,
+      eventName: 'BurnBridge',
+      pollingInterval: 10000,
+      onLogs: logs => {
+        const log0 = logs[0];
+        if (
+          lastLogIndex !== log0?.logIndex
+        ) {
+          lastLogIndex = log0?.logIndex;
+        }
+      },
+      fromBlock: 57521163n,
+    })
+
+    const unwatchBSCPublicClient = bscPublicClient.watchContractEvent({
+      address: process.env.BSC_TOKEN_ADDRESS as `0x${string}`,
+      abi: bridgeContractAbi,
+      eventName: 'BurnBridge',
+      // args: { from: '0xc961145a54C96E3aE9bAA048c4F4D6b04C13916b' },
+      pollingInterval: 10000,
+      onLogs: logs => {
+        const log0 = logs[0];
+        if (
+          lastLogIndex !== log0?.logIndex
+        ) {
+          lastLogIndex = log0?.logIndex;
+        }
+      },
+      fromBlock: 39139288n,
+    })
+
+
     return () => {
       unwatchPolygonPublicClient();
       unwatchBSCPublicClient();
     }
   }, [])
 
-   const getBalance = async (address, chain: "bsc" | "polygon") => {
+  const getBalance = async (address, chain: "bsc" | "polygon") => {
     const client = chain === "bsc" ? bscPublicClient : polygonPublicClient;
     const contractAddress = chain === "bsc" ? process.env.BSC_TOKEN_ADDRESS : process.env.POLYGON_TOKEN_ADDRESS;
 
@@ -98,6 +155,9 @@ export const Bridge = () => {
   const [balanceBSC, setBalanceBSC] = useState<number>(0);
   const [balancePolygon, setBalancePolygon] = useState<number>(0);
 
+  const [amountBSC, setAmountBSC] = useState<number>(0);
+  const [amountPolygon, setAmountPolygon] = useState<number>(0);
+
 
   return (
     <Flex justify="space-around">
@@ -113,10 +173,13 @@ export const Bridge = () => {
 
         <br/>
         <Flex justify="space-between">
-          <Button rightSection={<IconArrowRightTail/>}>Send to Polygon</Button>
+          <Button rightSection={<IconArrowRightTail/>} disabled={amountBSC <= 0 || !isAddress(addressBSC)}
+                  onClick={() => sendCoins(addressBSC, "bsc", amountBSC)}>Send to Polygon</Button>
           <NumberInput
             placeholder="Amount"
             min={0}
+            value={amountBSC}
+            onChange={e => setAmountBSC(Number(e))}
           />
         </Flex>
       </Stack>
@@ -134,8 +197,11 @@ export const Bridge = () => {
           <NumberInput
             placeholder="Amount"
             min={0}
+            value={amountPolygon}
+            onChange={e => setAmountPolygon(Number(e))}
           />
-          <Button leftSection={<IconArrowLeftTail/>}>Send to BSC</Button>
+          <Button leftSection={<IconArrowLeftTail/>} disabled={amountPolygon <= 0 || !isAddress(addressPolygon)}
+                  onClick={() => sendCoins(addressPolygon, "polygon", amountPolygon)}>Send to BSC</Button>
         </Flex>
       </Stack>
     </Flex>

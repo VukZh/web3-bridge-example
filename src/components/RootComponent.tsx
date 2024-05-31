@@ -1,8 +1,15 @@
-import {AppShell, Flex, Text} from "@mantine/core";
+import {AppShell, Flex, SegmentedControl, Text} from "@mantine/core";
 import {Bridge} from "./Bridge.tsx";
 import {Notifications} from "@mantine/notifications";
+import {Wallet} from "./Wallet.tsx";
+import {useContext} from "react";
+import {chain} from "../state/constants.ts";
+import {Context} from "../state/ContextProvider.tsx";
 
 export const RootComponent = () => {
+
+  const {setActiveChain, walletAddress, activeChain} = useContext(Context);
+
   return (
 
     <AppShell
@@ -17,15 +24,17 @@ export const RootComponent = () => {
                                                       wrap="wrap"><Text size="xl" variant="gradient"
                                                                         fw={900}
                                                                         gradient={{
-                                                                          from: "white",
-                                                                          to: "cyan",
-                                                                          deg: 90,
+                                                                          from: 'tomato',
+                                                                          to: 'green',
+                                                                          deg: 90
                                                                         }}
-                                                                        style={{width: 220}}>WEB3 bridge
-        example</Text>
+                                                                        style={{width: 220}}>WEB3 React
+        Project</Text>
         <Flex justify="center" align="center">
+          {walletAddress && <div style={{marginRight: 20}}>{walletAddress}</div>}
+          <SegmentedControl data={chain} onChange={setActiveChain} value={activeChain}/>
+          <Wallet/>
         </Flex>
-
       </Flex></AppShell.Header>
       <AppShell.Main>
         <Bridge/>
